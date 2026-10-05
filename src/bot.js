@@ -10,7 +10,7 @@ for (const channel of config.channels) {
   store.data.channels[channel] ??= { cursor: snowflake(Date.now()), pending: [], cooldowns: {} };
 }
 store.save();
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
   presence: { status: 'online', activities: [{ name: 'for new posts', type: ActivityType.Watching }] } });
 const api = (path, method = 'GET', body) => client.rest[method.toLowerCase()](path, body === undefined ? {} : { body });
 let busy = false;

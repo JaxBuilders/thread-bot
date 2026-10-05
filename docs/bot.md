@@ -8,7 +8,7 @@ A small Discord bot that creates a public thread for each new post in selected t
 - Creates threads promptly when a message arrives. Additional posts from the same author are queued during a configurable cooldown; other authors can proceed.
 - Supports text, attachment-only posts, replies, bot posts and webhook posts. Discord-generated system notices are excluded to avoid loops.
 - Keeps the original message and attachments intact. Adds the author to the thread.
-- Uses generic thread titles. No Message Content Intent or other privileged intents are required.
+- Names threads from the first 32 characters of the message, adding `...` if truncated. Whitespace is normalized and Discord mention markup is cleaned. Attachment-only posts use the filename; empty posts use `New discussion`. Message content is fetched when processing and is never written to the queue or logs.
 - Persists progress and queues in a Docker volume, catches up after restarts, and avoids duplicate threads by checking their starter-message IDs.
 - Scans periodically as a fallback for missed Gateway events. Cooldown queues are checked every five seconds, with up to five completed threads per channel per scan.
 - Automatically reconnects. Exits for a restart if its Gateway connection remains unavailable for three minutes.
@@ -26,7 +26,7 @@ Create a bot in the [Developer Portal](https://discord.com/developers/applicatio
 - Create Public Threads
 - Send Messages in Threads
 
-Members need permission to participate in threads. No privileged intents need enabling. The bot will show offline until this service starts. If you already created and invited the bot, reuse it and its token.
+Members need permission to participate in threads. Enable **Message Content Intent** under Bot → Privileged Gateway Intents and save before deploying. Other privileged intents are unnecessary. The bot will show offline until this service starts. If you already created and invited the bot, reuse it and its token.
 
 ## Configuration
 
@@ -58,7 +58,7 @@ Tests use fake Discord responses and temporary state directories; they do not co
 
 ## Limitations
 
-Online presence indicates a Gateway connection, not guaranteed successful processing. Container health additionally checks recent processing; missing permissions or API failures can leave posts queued. Persistent errors may block later processing within that channel until fixed. Posts deleted before processing cannot have threads. Cooldowns and Discord rate limits can delay busy-channel processing. Generic titles are intentional; automatic content-based titles would require Message Content Intent.
+Online presence indicates a Gateway connection, not guaranteed successful processing. Container health additionally checks recent processing; missing permissions or API failures can leave posts queued. Persistent errors may block later processing within that channel until fixed. Posts deleted before processing cannot have threads. Cooldowns and Discord rate limits can delay busy-channel processing. Existing threads are not renamed.
 
 Docker marks unhealthy containers but does not restart them solely for health-check failure. The bot's connection watchdog handles long Gateway disconnections; logs identify other failures for correction.
 

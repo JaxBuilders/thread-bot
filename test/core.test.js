@@ -1,11 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { processChannel, eligible, settings, DiscordError } from '../src/core.js';
+import { processChannel, eligible, settings, DiscordError, threadTitle } from '../src/core.js';
 const config = { cooldown: 60000, archive: 1440 };
 function harness(messages, state = { cursor: '1', pending: [], cooldowns: {} }) {
   const threads = new Set(); const created = []; let saved;
   const api = async (path, method) => {
     if (path.includes('/messages?')) return messages.filter(x => BigInt(x.id) > BigInt(state.cursor)).reverse();
+    if (path.includes('/messages/') && !method) {
+      const message = messages.find(x => x.id === path.split('/')[4]);
+      if (!message) throw new DiscordError(404,10008);
+      return message;
+    }
     if (method === 'POST') { const id = path.split('/')[4]; threads.add(id); created.push(id); return {}; }
     if (method === 'PUT') return null;
     const id = path.split('/')[2];
@@ -56,4 +61,28 @@ test('existing threads and system notices are skipped', async()=>{
 test('configuration fails closed',()=>{
   assert.throws(()=>settings({DISCORD_TOKEN:'example',CHANNEL_IDS:'invalid'}));
   assert.throws(()=>settings({DISCORD_TOKEN:'example',CHANNEL_IDS:'100000000000000000',COOLDOWN_SECONDS:'-1'}));
+});
+
+test('titles use normalized message text and truncate after 32 characters', () => {
+  assert.equal(threadTitle({ content: '  A short\nmessage  ' }), 'A short message');
+  assert.equal(threadTitle({ content: 'x'.repeat(32) }), 'x'.repeat(32));
+  assert.equal(threadTitle({ content: 'x'.repeat(33) }), 'x'.repeat(32) + '...');
+  assert.equal(threadTitle({ content: '😀'.repeat(33) }), '😀'.repeat(32) + '...');
+});
+test('attachment and empty posts have descriptive fallback titles', () => {
+  assert.equal(threadTitle({content:'',attachments:[{filename:'sketch.png'}]}), 'Attachment: sketch.png');
+  assert.equal(threadTitle({embeds:[{title:'A shared article'}]}), 'A shared article');
+  assert.equal(threadTitle({content:'   '}), 'New discussion');
+});
+test('titles clean Discord mention markup and invisible direction controls', () => {
+  assert.equal(threadTitle({content:'Hi <@123456789012345678> <#123456789012345678>'}), 'Hi @user #channel');
+  assert.equal(threadTitle({content:'hello\u202E there'}), 'hello there');
+});
+test('thread creation uses starter text without storing message content', async () => {
+  const h=harness([post('2','a',{content:'A new project to share'})]);
+  let name;
+  const api=async(path,method,body)=>{ if(method==='POST') name=body.name; return h.api(path,method,body); };
+  await processChannel('channel',h.state,api,h.save,1000,config);
+  assert.equal(name,'A new project to share');
+  assert.doesNotMatch(JSON.stringify(h.saved),/A new project/);
 });

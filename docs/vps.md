@@ -41,7 +41,7 @@ nano .env
 
 Fill in the bot token and comma-separated channel IDs. Avoid putting a token directly into a shell command, which can record it in shell history. Copy values from Discord privately. If you no longer have the token, reset it in the Discord Developer Portal and use the replacement.
 
-The existing Discord bot and invitation can be reused. Gateway connection only requires the unprivileged Guilds and Guild Messages intents, which the code requests automatically.
+The existing Discord bot and invitation can be reused. Enable Message Content Intent in the Developer Portal before starting the bot. The code requests Guilds, Guild Messages and Message Content intents.
 
 ## Start and verify
 
