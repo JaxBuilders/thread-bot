@@ -1,0 +1,12 @@
+[Unit]
+Description=Build, test and deploy Thread Bot updates
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/thread-bot/update.env
+ExecStart=/bin/bash /opt/thread-bot/scripts/update.sh
+TimeoutStartSec=15min
+UMask=0077
