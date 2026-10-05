@@ -86,3 +86,21 @@ test('thread creation uses starter text without storing message content', async 
   assert.equal(name,'A new project to share');
   assert.doesNotMatch(JSON.stringify(h.saved),/A new project/);
 });
+test('channel title and archive overrides are used, with Unicode names within Discord limits', async () => {
+  const h = harness([post('2', 'a', { content: '😀'.repeat(60) })]);
+  let body;
+  const api = async (path, method, value) => { if (method === 'POST') body = value; return h.api(path, method); };
+  await processChannel('channel', h.state, api, h.save, 1000, { ...config, titleChars: 48, archive: 60 });
+  assert.equal(body.name, '😀'.repeat(48) + '...');
+  assert.ok(body.name.length <= 100);
+  assert.equal(body.auto_archive_duration, 60);
+});
+test('paused channels leave cursors, pending posts and cooldowns untouched and catch up on resume', async () => {
+  const h = harness([post('2', 'a')]);
+  const original = structuredClone(h.state);
+  const fail = async () => assert.fail('Paused channel must not make API requests or save');
+  await processChannel('channel', h.state, fail, fail, 1000, { ...config, paused: true });
+  assert.deepEqual(h.state, original);
+  await processChannel('channel', h.state, h.api, h.save, 1000, { ...config, paused: false });
+  assert.deepEqual(h.created, ['2']);
+});

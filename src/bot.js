@@ -2,6 +2,7 @@ import { Client, Events, GatewayIntentBits, ActivityType, ChannelType, Permissio
 import { writeFileSync } from 'node:fs';
 import { settings, snowflake, processChannel } from './core.js';
 import { StateStore } from './state.js';
+import { command, channelSettings, handleCommand, operationQueue } from './commands.js';
 
 const log = (event, error) => console.log(JSON.stringify({ event, ...(error ? { code: Number(error.code) || 0, status: Number(error.status) || 0 } : {}) }));
 const config = settings(process.env);
@@ -18,16 +19,20 @@ let lastScan = 0;
 let lastReady = Date.now();
 let lastSuccess = 0;
 let stopping = false;
+const exclusive = operationQueue();
 async function scan() {
   if (busy || stopping || !client.isReady()) return;
   busy = true;
   let healthy = true;
   try {
-    for (const channel of config.channels) {
-      try {
-        await processChannel(channel, store.data.channels[channel], api, async () => store.save(), Date.now(), config);
-      } catch (error) { healthy = false; log('channel_processing_failed', error); }
-    }
+    await exclusive(async () => {
+      for (const channel of config.channels) {
+        try {
+          const state = store.data.channels[channel];
+          await processChannel(channel, state, api, async () => store.save(), Date.now(), channelSettings(config, state));
+        } catch (error) { healthy = false; log('channel_processing_failed', error); }
+      }
+    });
     lastScan = Date.now();
     if (healthy) lastSuccess = lastScan;
     client.user.setPresence({status: healthy ? 'online' : 'idle', activities: [{name: healthy ? 'for new posts' : 'Check bot logs',type: ActivityType.Watching}]});
@@ -37,12 +42,27 @@ client.on(Events.ClientReady, async () => {
   log('gateway_ready');
   const required = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages, PermissionFlagsBits.CreatePublicThreads, PermissionFlagsBits.SendMessagesInThreads];
   try {
+    const guilds = new Set();
     for (const id of config.channels) {
       const channel = await client.channels.fetch(id);
       if (channel?.type !== ChannelType.GuildText || !channel.permissionsFor(client.user)?.has(required)) throw new Error('Invalid channel or missing permissions');
+      guilds.add(channel.guildId);
+    }
+    for (const guild of guilds) {
+      try { await api(`/applications/${client.user.id}/guilds/${guild}/commands`, 'POST', command.toJSON()); }
+      catch (error) { log('command_registration_failed', error); }
     }
     await scan();
   } catch (error) { log('channel_setup_failed',error); await shutdown(1); }
+});
+client.on(Events.InteractionCreate, interaction => {
+  void handleCommand(interaction, config, store, exclusive).then(() => scan()).catch(async error => {
+    log('command_failed', error);
+    if (interaction.deferred && !interaction.replied) {
+      try { await interaction.editReply('Could not complete this command. Check the bot logs and try again.'); }
+      catch (replyError) { log('command_reply_failed', replyError); }
+    }
+  });
 });
 client.on(Events.MessageCreate, message => { if (config.channels.includes(message.channelId)) void scan().catch(error => log('scan_failed',error)); });
 client.on(Events.Error, error => log('gateway_error',error));

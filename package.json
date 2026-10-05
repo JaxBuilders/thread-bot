@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/bot.js && node --check src/state.js",
+    "check": "node --check src/bot.js && node --check src/core.js && node --check src/commands.js && node --check src/state.js",
     "start": "node --env-file=.env src/bot.js"
   },
   "engines": {

@@ -30,7 +30,8 @@ Members need permission to participate in threads. Enable **Message Content Inte
 
 ## Configuration
 
-All configuration is supplied through `.env`, which Git and Docker build context exclude.
+Startup configuration is supplied through `.env`, which Git and Docker build context exclude.
+Channel behavior can also be changed through slash commands, with overrides stored in the private data volume.
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
@@ -40,6 +41,39 @@ All configuration is supplied through `.env`, which Git and Docker build context
 | `AUTO_ARCHIVE_MINUTES` | Inactivity interval: 60, 1440, 4320, 10080 | 1440 |
 
 Thread archiving does not delete discussions. Changing `.env` requires `docker compose up -d --force-recreate`; a restart alone does not reload container environment settings.
+
+## Slash commands
+
+Use these in a watched text channel. **Manage Server** permission is required,
+including when Discord command permissions are customized. Replies are private
+to the person running the command. Each channel has independent settings.
+
+| Command | Effect |
+| --- | --- |
+| `/threadbot settings` | Show current behavior and queued-post count |
+| `/threadbot configure cooldown_seconds:120` | Space an author's threads two minutes apart (0 disables) |
+| `/threadbot configure title_characters:40` | Use the first 40 message characters, then `...` if truncated |
+| `/threadbot configure auto_archive_minutes:1440` | Archive future threads after one day of inactivity |
+| `/threadbot pause` | Stop processing this channel; keep queued posts and catch up later |
+| `/threadbot resume` | Resume processing, including posts sent while paused |
+| `/threadbot reset` | Restore startup cooldown/archive defaults and 32-character titles; retain pause status |
+
+The configure command accepts multiple options together. Cooldowns range from
+0 to 86400 seconds, title lengths from 8 to 48 Unicode characters, and archive
+times are selected from 1 hour, 1 day, 3 days, or 1 week. Changes apply to future
+thread creation, including queued posts; existing threads and already-running
+cooldown deadlines remain unchanged. Settings survive updates and restarts.
+Reset clears behavior overrides to the current startup defaults and preserves
+queued work. A long pause can produce a backlog when resumed.
+
+The bot registers its command in servers containing watched channels on startup,
+without removing other application commands. The `bot` invitation scope includes
+`applications.commands` automatically, per the
+[Discord application-command documentation](https://docs.discord.com/developers/interactions/application-commands).
+If commands are hidden, check the server's app integration settings and the
+member's Use Application Commands permission, then reopen Discord. Commands do
+not add watched channels or modify credentials; those stay in private startup
+configuration.
 
 ## Development
 

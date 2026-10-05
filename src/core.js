@@ -23,7 +23,7 @@ export class DiscordError extends Error {
     this.status = status; this.code = code; this.retryAfter = retryAfter;
   }
 }
-export function threadTitle(message) {
+export function threadTitle(message, limit = 32) {
   const raw = message.content?.trim()
     || (message.attachments?.[0]?.filename ? `Attachment: ${message.attachments[0].filename}` : '')
     || message.embeds?.find(embed => embed.title)?.title
@@ -37,9 +37,10 @@ export function threadTitle(message) {
     .replace(/[\p{Cc}\u200B\u202A-\u202E\u2066-\u2069]/gu, '')
     .trim() || 'New discussion';
   const chars = Array.from(text);
-  return chars.length > 32 ? chars.slice(0, 32).join('').trimEnd() + '...' : text;
+  return chars.length > limit ? chars.slice(0, limit).join('').trimEnd() + '...' : text;
 }
 export async function processChannel(channel, state, api, save, now, config) {
+  if (config.paused) return 0;
   state.pending ??= [];
   state.cooldowns ??= {};
   // One page per run bounds requests; fetching after a cursor returns the next page.
@@ -67,7 +68,7 @@ export async function processChannel(channel, state, api, save, now, config) {
           // The message and derived title are never persisted or logged.
           const message = await api(`/channels/${channel}/messages/${item.id}`);
           await api(`/channels/${channel}/messages/${item.id}/threads`, 'POST', {
-            name: threadTitle(message), auto_archive_duration: config.archive
+            name: threadTitle(message, config.titleChars ?? 32), auto_archive_duration: config.archive
           });
         } catch (error) {
           if (error.code === 10008) {
