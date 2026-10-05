@@ -1,89 +1,93 @@
 # Thread Bot
 
-Automatically attach public Discord threads to new messages in selected text channels. Hosted on Cloudflare Workers with a once-per-minute Cron Trigger. No always-on computer, Docker container, public web endpoint or domain is required.
+A small Discord bot that creates a public thread for each new post in selected text channels. Run it continuously on a VPS or home server using Docker Compose.
 
-## Behavior
+## What it does
 
-- Every normal message or reply gets a thread, including attachment-only, bot and webhook posts. Discord-generated system messages are excluded.
-- The original message, author and attachments remain in the channel. The bot adds the author to the thread.
-- Titles are generic (`Discussion` plus a short message-ID suffix). Message Content Intent is not required.
-- Per-author, per-channel cooldown defaults to 60 seconds. Extra posts are queued, not deleted or discarded. Other authors continue during that cooldown.
-- This cooldown delays thread creation; it does not stop users posting. Set Discord channel slowmode separately if you want a posting limit.
-- First activation starts with new posts, leaving historical messages untouched. An initial warm-up poll establishes the cursor; messages sent before that poll are not processed.
-- Each channel ingests up to 100 posts and creates up to five threads per minute. Busy channels, queued posts, outages and rate limits can take longer than a minute. Cron timing is not a real-time guarantee.
-- Up to three configured channels keep per-run Discord requests comfortably bounded. Use ordinary server text channels, not forums, DMs or existing threads.
+- Connects to Discord's Gateway and appears **online**, with **Watching for new posts**.
+- Creates threads promptly when a message arrives. Additional posts from the same author are queued during a configurable cooldown; other authors can proceed.
+- Supports text, attachment-only posts, replies, bot posts and webhook posts. Discord-generated system notices are excluded to avoid loops.
+- Keeps the original message and attachments intact. Adds the author to the thread.
+- Uses generic thread titles. No Message Content Intent or other privileged intents are required.
+- Persists progress and queues in a Docker volume, catches up after restarts, and avoids duplicate threads by checking their starter-message IDs.
+- Scans periodically as a fallback for missed Gateway events. Cooldown queues are checked every five seconds, with up to five completed threads per channel per scan.
+- Automatically reconnects. Exits for a restart if its Gateway connection remains unavailable for three minutes.
+- Shows an idle status when processing fails, writes numeric error codes without message content or identifying data, and exposes container health locally without publishing a port.
 
-A short-lived SQLite-backed Durable Object stores cursors, pending message/author IDs and cooldowns, and prevents overlapping poll runs. It does not maintain a WebSocket connection. Threads themselves provide deduplication after crashes. Removing a channel from configuration stops processing it but does not erase its stored state.
+First startup begins with new posts rather than converting existing history. Posts made after that point remain recoverable from history. Up to three ordinary text channels are supported. A 60-second cooldown is the default; it delays thread creation, not message posting. Use Discord channel slowmode to limit posting itself.
 
-## Discord setup
+## Discord application
 
-1. Create an application and bot in the [Discord Developer Portal](https://discord.com/developers/applications).
-2. Install the bot in your server using the `bot` OAuth2 scope. Grant **View Channel**, **Read Message History**, **Send Messages**, **Create Public Threads**, and **Send Messages in Threads** in each watched channel. Administrator and Manage Messages are unnecessary.
-3. Copy the bot token privately. Enable Developer Mode in Discord to copy the target text-channel IDs.
-4. Users need access to the channel and **Send Messages in Threads** to participate. Consider pinning a notice asking people to reply in threads.
+Create a bot in the [Developer Portal](https://discord.com/developers/applications), enable Guild Install and invite it with the `bot` scope. The bot needs these channel permissions:
 
-No privileged gateway intents are needed: this bot uses REST polling and does not read message text.
+- View Channels
+- Read Message History
+- Send Messages
+- Create Public Threads
+- Send Messages in Threads
 
-## Cloudflare deployment
+Members need permission to participate in threads. No privileged intents need enabling. The bot will show offline until this service starts. If you already created and invited the bot, reuse it and its token.
 
-Install Node.js 22 or newer and npm, then from this repository:
+## Deploy
+
+See [VPS deployment guide](docs/vps.md) for setup, updates and backups.
+
+With Docker Engine and the Compose plugin installed:
+
+```sh
+cp .env.example .env
+chmod 600 .env
+# Edit .env privately with your bot token and watched channel IDs.
+docker compose up -d --build
+docker compose logs --tail=50 -f bot
+```
+
+Do not start this alongside another deployment of the same bot. Only one instance should process the watched channels.
+
+## Configuration
+
+All configuration is supplied through `.env`, which Git and Docker build context exclude.
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `DISCORD_TOKEN` | Bot token, not application ID or client secret | Required |
+| `CHANNEL_IDS` | Comma-separated text-channel IDs, up to three | Required |
+| `COOLDOWN_SECONDS` | Per-author, per-channel spacing; 0 disables | 60 |
+| `AUTO_ARCHIVE_MINUTES` | Inactivity interval: 60, 1440, 4320, 10080 | 1440 |
+
+Thread archiving does not delete discussions. Changing `.env` requires `docker compose up -d --force-recreate`; a restart alone does not reload container environment settings.
+
+## Development
+
+Node.js 22.12 or newer is required. The VPS needs only Docker, not a host Node installation.
 
 ```sh
 npm ci
-npx wrangler login
-npx wrangler secret put DISCORD_TOKEN
-npx wrangler secret put CHANNEL_IDS
 npm test
 npm run check
-npm run deploy
+cp .env.example .env
+# Fill in test-channel credentials privately.
+npm start
 ```
 
-Enter the bot token at the first secret prompt, and comma-separated channel IDs at the second. Neither belongs in `wrangler.jsonc` or Git. If Wrangler asks to provision the Worker before setting secrets, allow it; then complete deployment.
+Tests use fake Discord responses and temporary state directories; they do not connect to Discord. Running `npm start` with real credentials performs real thread creation. Use a test channel and stop other instances first.
 
-Optional public settings in `wrangler.jsonc`:
+## Privacy
 
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| `COOLDOWN_SECONDS` | `60` | Per-author spacing between thread creations; `0` disables it |
-| `AUTO_ARCHIVE_MINUTES` | `1440` | Archive after inactivity; allowed values: 60, 1440, 4320, 10080 |
+Project files contain no personal identifiers or real server/account IDs. Tokens and channel IDs belong only in private environment files. Runtime state stores message IDs, author IDs and cooldown times needed for recovery; it does not store usernames, message bodies or attachments. The data volume is private server data, not source code. Logs omit tokens, IDs and Discord response bodies.
 
-Thread archiving does not delete the discussion. Deploy again after configuration changes. Cron changes can take up to 15 minutes to propagate.
+## Limitations
 
-```sh
-npx wrangler tail
-```
+Online presence indicates a Gateway connection, not guaranteed successful processing. Container health additionally checks recent processing; missing permissions or API failures can leave posts queued. Persistent errors may block later processing within that channel until fixed. Posts deleted before processing cannot have threads. Cooldowns and Discord rate limits can delay busy-channel processing. Generic titles are intentional; automatic content-based titles would require Message Content Intent.
 
-Logs contain counts and numeric API errors, without tokens, channel IDs, user IDs or message content. A 403 usually means channel permissions; 429 pauses polling according to Discord's retry delay. A failed post stays queued for retry. API permission or persistent failures can block later processing in that channel until corrected.
+Docker marks unhealthy containers but does not restart them solely for health-check failure. The bot's connection watchdog handles long Gateway disconnections; logs identify other failures for correction.
 
-## Local testing
+## References
 
-`npm test` uses fake Discord responses and does not contact Discord.
+- [Discord Gateway](https://docs.discord.com/developers/events/gateway)
+- [discord.js](https://discord.js.org/docs/packages/discord.js/main)
+- [Docker Compose](https://docs.docker.com/compose/)
 
-To run the Worker locally, copy `.dev.vars.example` to `.dev.vars`, fill it privately, then:
+## Automatic updates
 
-```sh
-npm run dev
-```
-
-In another terminal:
-
-```sh
-curl 'http://localhost:8787/__scheduled?cron=*+*+*+*+*'
-```
-
-This triggers **real Discord actions** when real credentials are supplied. Use a dedicated test channel. Trigger once to initialize and again after posting. Local storage is separate from production.
-
-## Privacy and cost
-
-Tracked files use no real personal, account or server identifiers. Tokens and channel IDs are deployment secrets; local secrets, Wrangler state and build output are ignored. Runtime state contains the Discord IDs necessary to process messages, but no message bodies or usernames. Do not commit logs, local state or credentials.
-
-This architecture is intended for Cloudflare's free Workers and SQLite Durable Objects allowances at modest traffic. It is not a promise of unlimited free hosting; verify current quotas and monitor usage. Free-tier exhaustion can interrupt processing.
-
-- [Cloudflare Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
-- [Durable Object pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/)
-- [Discord message history API](https://docs.discord.com/developers/resources/message#get-channel-messages)
-- [Discord thread creation API](https://docs.discord.com/developers/resources/channel#start-thread-from-message)
-
-## Updating and stopping
-
-Update dependencies, run tests and a dry-run build, then deploy. To pause the bot, remove the cron from `wrangler.jsonc` and deploy (allow for propagation), or disable the trigger in Cloudflare. Existing messages and threads are left intact.
+See [automatic updates](docs/updates.md). The VPS can check a selected Git branch every five minutes, test and build each new commit, and restore the previous image if the replacement fails its health check. Dependency upgrades remain explicit source changes; the service does not run uncontrolled package upgrades.

@@ -23,17 +23,6 @@ export class DiscordError extends Error {
     this.status = status; this.code = code; this.retryAfter = retryAfter;
   }
 }
-export function discordClient(token, fetcher = fetch) {
-  return async (path, method = 'GET', body) => {
-    const response = await fetcher(`https://discord.com/api/v10${path}`, {
-      method, headers: { Authorization: `Bot ${token}`, 'Content-Type': 'application/json' },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(10000)
-    });
-    const data = response.status === 204 ? null : await response.json();
-    if (!response.ok) throw new DiscordError(response.status, data?.code, Number(data?.retry_after || 0));
-    return data;
-  };
-}
 export async function processChannel(channel, state, api, save, now, config) {
   state.pending ??= [];
   state.cooldowns ??= {};

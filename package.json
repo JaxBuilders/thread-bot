@@ -1,1 +1,16 @@
-{"name":"thread-bot","private":true,"type":"module","scripts":{"test":"node --test","dev":"wrangler dev --test-scheduled","check":"wrangler deploy --dry-run","deploy":"wrangler deploy"},"devDependencies":{"wrangler":"^4.0.0"}}
+{
+  "name": "thread-bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/bot.js && node --check src/state.js",
+    "start": "node --env-file=.env src/bot.js"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0"
+  }
+}

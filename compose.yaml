@@ -1,0 +1,32 @@
+services:
+  bot:
+    image: ${THREAD_BOT_IMAGE:-thread-bot:current}
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file: ${BOT_ENV_FILE:-.env}
+    environment:
+      STATE_PATH: /app/data/state.json
+      HEALTH_PATH: /tmp/thread-bot-health.json
+    volumes:
+      - bot-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    stop_grace_period: 25s
+    healthcheck:
+      test: ["CMD", "node", "-e", "const h=JSON.parse(require('fs').readFileSync('/tmp/thread-bot-health.json'));process.exit(h.ready&&Date.now()-h.lastSuccess<180000?0:1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: '2'
+volumes:
+  bot-data:
